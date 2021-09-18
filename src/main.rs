@@ -1,17 +1,20 @@
 use std::io::{Error, ErrorKind, Read, Result, Write};
-use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 
 struct Config {
-    bind_addr: &'static str,
+    bind_addr: Vec<SocketAddr>,
 }
 
 fn main() {
     let config = Config {
-        bind_addr: "127.0.0.1:1080",
+        bind_addr: vec![
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1080),
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 1080),
+        ],
     };
 
-    let listener =
-        TcpListener::bind(config.bind_addr).expect(&format!("Can't bind to {}", &config.bind_addr));
+    let listener = TcpListener::bind(&config.bind_addr[..])
+        .expect(&format!("Can't bind to {:#?}", &config.bind_addr));
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -57,7 +60,7 @@ fn authentication_negotiation(mut stream: &TcpStream) -> Result<()> {
 }
 
 fn process_request(mut stream: &TcpStream) -> Result<()> {
-    let mut request = vec![0u8; 10];
+    let mut request = vec![0u8; 4];
     stream.read_exact(&mut request)?;
 
     // Protocol: always 5
@@ -74,16 +77,54 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
         stream.write(&[5u8, 1u8])?;
         return Err(error("Request, Invalid reserved"));
     }
-    // Address type: 1 IPv4, 4 IPv6 (not supported yet)
-    if request[3] != 1 {
+    // Address type: 1 IPv4, 4 IPv6
+    enum AddressType {
+        IPv4,
+        IPv6,
+    }
+    let address_type;
+    if request[3] == 4 {
+        address_type = AddressType::IPv6;
+    } else if request[3] == 1 {
+        address_type = AddressType::IPv4;
+    } else {
         stream.write(&[5u8, 8u8])?;
         return Err(error("Request, address type not supported"));
     }
 
-    let request_ip = SocketAddrV4::new(
-        Ipv4Addr::new(request[4], request[5], request[6], request[7]),
-        u16::from_be_bytes([request[8], request[9]]),
-    );
+    let request_ip = match address_type {
+        AddressType::IPv4 => {
+            let mut request_addr = vec![0u8; 6];
+            stream.read_exact(&mut request_addr)?;
+            SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(
+                    request_addr[0],
+                    request_addr[1],
+                    request_addr[2],
+                    request_addr[3],
+                )),
+                u16::from_be_bytes([request_addr[4], request_addr[5]]),
+            )
+        }
+        AddressType::IPv6 => {
+            let mut request_addr = vec![0u8; 18];
+            stream.read_exact(&mut request_addr)?;
+            SocketAddr::new(
+                IpAddr::V6(Ipv6Addr::new(
+                    u16::from_be_bytes([request_addr[0], request_addr[1]]),
+                    u16::from_be_bytes([request_addr[2], request_addr[3]]),
+                    u16::from_be_bytes([request_addr[4], request_addr[5]]),
+                    u16::from_be_bytes([request_addr[6], request_addr[7]]),
+                    u16::from_be_bytes([request_addr[8], request_addr[9]]),
+                    u16::from_be_bytes([request_addr[10], request_addr[11]]),
+                    u16::from_be_bytes([request_addr[12], request_addr[13]]),
+                    u16::from_be_bytes([request_addr[14], request_addr[15]]),
+                )),
+                u16::from_be_bytes([request_addr[16], request_addr[17]]),
+            )
+        }
+    };
+
     dbg!(request_ip);
 
     let remote = TcpStream::connect(request_ip);
@@ -109,7 +150,7 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
             local_writer.write(&local_addr.port().to_le_bytes())?;
 
             let sender = std::thread::spawn(move || -> Result<()> {
-                let mut buffer = [0u8; 4096 * 16];
+                let mut buffer = [0u8; 16384];
                 loop {
                     match local_reader.read(&mut buffer) {
                         Ok(read) => {
@@ -132,7 +173,7 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
                 Ok(())
             });
             let receiver = std::thread::spawn(move || -> Result<()> {
-                let mut buffer = [0u8; 4096 * 16];
+                let mut buffer = [0u8; 16384];
                 loop {
                     match remote_reader.read(&mut buffer) {
                         Ok(read) => {
