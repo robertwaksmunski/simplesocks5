@@ -1,6 +1,6 @@
 # simplesocks5
 
-simplesocks5 is meant to be a simple, elegant and readable RFC1928 compliant socks5 implementation in pure, safe Rust without any dependencies or crates beyond the standard library. Something that can be left listening on a public interface without a worry of a machine security compromise. Author has very extensive experience with async/await and epoll/kqueue based event loops (Tokyo, mio and async_std), but for a project this simple he wishes to explore the behaviour of worker threads and blocking system calls on modern Unix like machines. Implementation is integration tested with Curl and Firefox.
+simplesocks5 is meant to be a simple, small, elegant and readable RFC1928 partially compliant socks5 implementation in pure, safe Rust without any dependencies or crates beyond the standard library. Something that can be left listening on a public interface without a worry of a machine security compromise. Author has very extensive experience with async/await and epoll/kqueue based event loops (Tokyo, mio and async_std), but for a project this simple he wishes to explore the behaviour of worker threads and blocking system calls on modern Unix like machines. Implementation is integration tested with Curl and Firefox.
 
 ### Architecture
 
