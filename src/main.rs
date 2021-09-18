@@ -52,6 +52,11 @@ fn authentication_negotiation(mut client_stream: &TcpStream) -> Result<()> {
 }
 
 fn process_request(mut client_stream: &TcpStream) -> Result<()> {
+    enum AddressType {
+        IPv4,
+        IPv6,
+    }
+    
     let mut request = [0u8; 4];
     client_stream.read_exact(&mut request)?;
 
@@ -60,7 +65,7 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
         return Err(error("Request, invalid protocol version"));
     }
     // Command: 1 connect, 3 udp
-    if request[1] != 1 && request[1] != 3 {
+    if request[1] != 1 {
         client_stream.write(&[5u8, 7u8])?;
         return Err(error("Request, Invalid command"));
     }
@@ -70,10 +75,6 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
         return Err(error("Request, Invalid reserved"));
     }
     // Address type: 1 IPv4, 4 IPv6
-    enum AddressType {
-        IPv4,
-        IPv6,
-    }
     let address_type;
     if request[3] == 4 {
         address_type = AddressType::IPv6;
