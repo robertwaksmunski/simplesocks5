@@ -52,7 +52,7 @@ fn authentication_negotiation(mut client_stream: &TcpStream) -> Result<()> {
 }
 
 fn process_request(mut client_stream: &TcpStream) -> Result<()> {
-    let mut request = vec![0u8; 4];
+    let mut request = [0u8; 4];
     client_stream.read_exact(&mut request)?;
 
     // Protocol: always 5
@@ -86,7 +86,7 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
 
     let request_ip = match address_type {
         AddressType::IPv4 => {
-            let mut request_addr = vec![0u8; 6];
+            let mut request_addr = [0u8; 6];
             client_stream.read_exact(&mut request_addr)?;
             SocketAddr::new(
                 IpAddr::V4(Ipv4Addr::new(
@@ -99,7 +99,7 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
             )
         }
         AddressType::IPv6 => {
-            let mut request_addr = vec![0u8; 18];
+            let mut request_addr = [0u8; 18];
             client_stream.read_exact(&mut request_addr)?;
             SocketAddr::new(
                 IpAddr::V6(Ipv6Addr::new(
