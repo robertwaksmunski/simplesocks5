@@ -41,7 +41,7 @@ dtrace: description 'syscall:::entry ' matched 1142 probes
   recvfrom                                                     486735
 ```
 
-Not good, not terrible. With default kernel configuration of 1500 threads per process we can proxy about 750 connections at a time.
+Not great, not terrible. With default kernel configuration of 1500 threads per process we can proxy about 750 connections at a time.
 
 ```
 sysctl kern.threads.max_threads_per_proc
