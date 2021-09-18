@@ -3,20 +3,9 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, Tc
 
 static VERBOSE: usize = 0;
 
-struct Config {
-    bind_addr: Vec<SocketAddr>,
-}
-
 fn main() {
-    let config = Config {
-        bind_addr: vec![
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1080),
-            SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 1080),
-        ],
-    };
-
-    let listener = TcpListener::bind(&config.bind_addr[..])
-        .expect(&format!("Can't bind to {:#?}", &config.bind_addr));
+    let listener = TcpListener::bind("0.0.0.0:1080")
+        .expect("Can't bind to local port");
 
     for client_stream in listener.incoming() {
         match client_stream {
