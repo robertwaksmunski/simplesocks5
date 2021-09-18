@@ -1,7 +1,7 @@
 use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 
-static VERBOSE: bool = false;
+static VERBOSE: usize = 0;
 
 struct Config {
     bind_addr: Vec<SocketAddr>,
@@ -14,9 +14,10 @@ fn main() {
             SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 1080),
         ],
     };
-    
+
     let listener = TcpListener::bind(&config.bind_addr[..])
         .expect(&format!("Can't bind to {:#?}", &config.bind_addr));
+
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -126,7 +127,7 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
             )
         }
     };
-    if VERBOSE {
+    if VERBOSE > 0 {
         println!(
             "Client {} connected to {} requests {}",
             &stream.peer_addr()?,
@@ -163,12 +164,12 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
                     match local_reader.read(&mut buffer) {
                         Ok(read) => {
                             if read > 0 {
-                                if VERBOSE {
+                                if VERBOSE > 2 {
                                     println!("< {}", &read);
                                 }
                                 remote_writer.write(&buffer[0..read])?;
                             } else {
-                                if VERBOSE {
+                                if VERBOSE > 1 {
                                     println!("Sender EOF");
                                 }
                                 let _ = remote_writer.shutdown(Shutdown::Both);
@@ -190,12 +191,12 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
                     match remote_reader.read(&mut buffer) {
                         Ok(read) => {
                             if read > 0 {
-                                if VERBOSE {
+                                if VERBOSE > 2 {
                                     println!("> {}", &read);
                                 }
                                 local_writer.write(&buffer[0..read])?;
                             } else {
-                                if VERBOSE {
+                                if VERBOSE > 1 {
                                     println!("Receiver EOF");
                                 }
                                 let _ = local_writer.shutdown(Shutdown::Both);
