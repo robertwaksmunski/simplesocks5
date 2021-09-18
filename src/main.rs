@@ -1,5 +1,5 @@
 use std::io::{Error, ErrorKind, Read, Result, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddrV4, TcpListener, TcpStream};
 
 struct Config {
     bind_addr: &'static str,
@@ -117,11 +117,14 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
                                 println!("< {}", &read);
                                 remote_writer.write(&buffer[0..read])?;
                             } else {
-                                std::thread::sleep(std::time::Duration::from_millis(10));
+                                println!("Sender EOF");
+                                let _ = remote_writer.shutdown(Shutdown::Both);
+                                break;
                             }
                         }
                         Err(e) => {
                             eprintln!("Sender error: {}", e);
+                            let _ = remote_writer.shutdown(Shutdown::Both);
                             break;
                         }
                     }
@@ -137,11 +140,14 @@ fn process_request(mut stream: &TcpStream) -> Result<()> {
                                 println!("> {}", &read);
                                 local_writer.write(&buffer[0..read])?;
                             } else {
-                                std::thread::sleep(std::time::Duration::from_millis(10));
+                                println!("Receiver EOF");
+                                let _ = local_writer.shutdown(Shutdown::Both);
+                                break;
                             }
                         }
                         Err(e) => {
                             eprintln!("Receiver error: {}", e);
+                            let _ = local_writer.shutdown(Shutdown::Both);
                             break;
                         }
                     }
