@@ -86,3 +86,4 @@ Not the most stable connection, so like with most benchmarks please take it with
 - Config struct and argument parsing
 - Username/Password authentication RFC1929
 - UDP Clients
+- Tests / Fuzzer
