@@ -4,8 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, Tc
 static VERBOSE: usize = 0;
 
 fn main() {
-    let listener = TcpListener::bind("0.0.0.0:1080")
-        .expect("Can't bind to local port");
+    let listener = TcpListener::bind("0.0.0.0:1080").expect("Can't bind to local port");
 
     for client_stream in listener.incoming() {
         match client_stream {
@@ -149,59 +148,18 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
             let mut remote_stream_clone = remote_stream.try_clone()?;
 
             let receiver = std::thread::spawn(move || -> Result<()> {
-                let mut buffer = [0u8; 16384];
-                loop {
-                    match remote_stream_clone.read(&mut buffer) {
-                        Ok(read) => {
-                            if read > 0 {
-                                if VERBOSE > 2 {
-                                    println!("> {}", &read);
-                                }
-                                client_stream_clone.write(&buffer[0..read])?;
-                            } else {
-                                if VERBOSE > 1 {
-                                    println!("Receiver EOF");
-                                }
-                                let _ = client_stream_clone.shutdown(Shutdown::Both);
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Receiver error: {}", e);
-                            let _ = client_stream_clone.shutdown(Shutdown::Both);
-                            break;
-                        }
-                    }
-                }
-                Ok(())
+                pipe_data(
+                    "Recv",
+                    &mut remote_stream_clone,
+                    &mut client_stream_clone,
+                )
             });
 
-            {
-                let mut buffer = [0u8; 16384];
-                loop {
-                    match client_stream.read(&mut buffer) {
-                        Ok(read) => {
-                            if read > 0 {
-                                if VERBOSE > 2 {
-                                    println!("< {}", &read);
-                                }
-                                remote_stream.write(&buffer[0..read])?;
-                            } else {
-                                if VERBOSE > 1 {
-                                    println!("Sender EOF");
-                                }
-                                let _ = remote_stream.shutdown(Shutdown::Both);
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Sender error: {}", e);
-                            let _ = remote_stream.shutdown(Shutdown::Both);
-                            break;
-                        }
-                    }
-                }
-            }
+            pipe_data(
+                "Send",
+                &mut client_stream.try_clone()?,
+                &mut remote_stream,
+            )?;
 
             receiver
                 .join()
@@ -210,6 +168,34 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
         Err(_) => {
             client_stream.write(&[5u8, 5u8])?;
             return Err(error("Request, connection failed"));
+        }
+    }
+    Ok(())
+}
+
+fn pipe_data(name: &str, from: &mut TcpStream, to: &mut TcpStream) -> Result<()> {
+    let mut buffer = [0u8; 16384];
+    loop {
+        match from.read(&mut buffer) {
+            Ok(read) => {
+                if read > 0 {
+                    if VERBOSE > 2 {
+                        println!("{}: {}", name, &read);
+                    }
+                    to.write(&buffer[0..read])?;
+                } else {
+                    if VERBOSE > 1 {
+                        println!("{}: EOF", name);
+                    }
+                    let _ = to.shutdown(Shutdown::Both);
+                    break;
+                }
+            }
+            Err(e) => {
+                eprintln!("{} error: {}", name, e);
+                let _ = to.shutdown(Shutdown::Both);
+                break;
+            }
         }
     }
     Ok(())
