@@ -9,8 +9,8 @@ fn main() {
         .into_iter()
         .filter(|s| s.starts_with("-v"))
         .next()
-        .unwrap_or(String::from(""))
-        .len();
+        .unwrap_or(String::from("-"))
+        .len() - 1;
 
     let bind = match env::args()
         .into_iter()
