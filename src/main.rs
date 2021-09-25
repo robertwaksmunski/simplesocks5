@@ -1,5 +1,6 @@
 use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::thread;
 
 static VERBOSE: usize = 0;
 
@@ -10,9 +11,17 @@ fn main() {
         match client_stream {
             Ok(client_stream) => {
                 let _ = client_stream.set_nodelay(true);
-                let _ = std::thread::spawn(move || {
-                    connection_handshake(&client_stream)
-                        .unwrap_or_else(|e| eprintln!("Connection error: {}", e));
+                let _ = thread::spawn(move || {
+                    match handle_connection(&client_stream) {
+                        Ok(_) => {
+                            if VERBOSE > 0 {
+                                println!("Connection {:?} successful", &client_stream);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Connection {:?} error: {}", &client_stream, e);
+                        }
+                    };
                 });
             }
             Err(e) => {
@@ -22,13 +31,20 @@ fn main() {
     }
 }
 
+fn handle_connection(client_stream: &TcpStream) -> Result<()> {
+    connection_handshake(client_stream)?;
+    authentication_negotiation(client_stream)?;
+    let remote_ip = parse_request(client_stream)?;
+    remote_request(&remote_ip, &client_stream)
+}
+
 fn connection_handshake(client_stream: &TcpStream) -> Result<()> {
     let byte = client_stream
         .bytes()
         .next()
         .ok_or(error("Connection handshake read failed"))??;
     match byte {
-        5 => authentication_negotiation(client_stream),
+        5 => Ok(()),
         _ => Err(error("Invalid protocol version")),
     }
 }
@@ -44,19 +60,19 @@ fn authentication_negotiation(mut client_stream: &TcpStream) -> Result<()> {
     // Allow unauthenticated user
     if authentication_methods.contains(&0) {
         client_stream.write(&[5u8, 0u8])?;
-        return process_request(client_stream);
+        return Ok(());
     }
 
     client_stream.write(&[5u8, 255u8])?;
     Err(error("No acceptable authentication method sent"))
 }
 
-fn process_request(mut client_stream: &TcpStream) -> Result<()> {
+fn parse_request(mut client_stream: &TcpStream) -> Result<SocketAddr> {
     enum AddressType {
         IPv4,
         IPv6,
     }
-    
+
     let mut request = [0u8; 4];
     client_stream.read_exact(&mut request)?;
 
@@ -118,14 +134,12 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
         }
     };
     if VERBOSE > 0 {
-        println!(
-            "Client {} connected to {} requests {}",
-            &client_stream.peer_addr()?,
-            &client_stream.local_addr()?,
-            request_ip
-        );
+        println!("Connection {:?} requests {}", &client_stream, request_ip);
     }
+    Ok(request_ip)
+}
 
+fn remote_request(request_ip: &SocketAddr, mut client_stream: &TcpStream) -> Result<()> {
     let remote = TcpStream::connect(request_ip);
     match remote {
         Ok(mut remote_stream) => {
@@ -148,19 +162,11 @@ fn process_request(mut client_stream: &TcpStream) -> Result<()> {
             let mut client_stream_clone = client_stream.try_clone()?;
             let mut remote_stream_clone = remote_stream.try_clone()?;
 
-            let receiver = std::thread::spawn(move || -> Result<()> {
-                pipe_data(
-                    "Recv",
-                    &mut remote_stream_clone,
-                    &mut client_stream_clone,
-                )
+            let receiver = thread::spawn(move || -> Result<()> {
+                pipe_data("Recv", &mut remote_stream_clone, &mut client_stream_clone)
             });
 
-            pipe_data(
-                "Send",
-                &mut client_stream.try_clone()?,
-                &mut remote_stream,
-            )?;
+            pipe_data("Send", &mut client_stream.try_clone()?, &mut remote_stream)?;
 
             receiver
                 .join()
