@@ -3,14 +3,17 @@ use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::str::FromStr;
 use std::thread;
+// Look, no external dependencies, pure rust, pure std lib.
 
 fn main() {
-    let verbosity = env::args()
+    // Parse agruments
+    let verbosity_level = env::args()
         .into_iter()
         .filter(|s| s.starts_with("-v"))
         .next()
         .unwrap_or(String::from("-"))
-        .len() - 1;
+        .len()
+        - 1;
 
     let bind = match env::args()
         .into_iter()
@@ -22,8 +25,12 @@ fn main() {
     }
     .expect("Valid bind address needed");
 
-    println!("Listening on {} with verbosity level {}", bind, verbosity);
+    println!(
+        "Listening on {} with verbosity level {}",
+        bind, verbosity_level
+    );
 
+    // Bind and listen for connections
     let listener = TcpListener::bind(bind).expect("Can't bind to local port");
 
     for client_stream in listener.incoming() {
@@ -31,16 +38,9 @@ fn main() {
             Ok(client_stream) => {
                 let _ = client_stream.set_nodelay(true);
                 let _ = thread::spawn(move || {
-                    match handle_connection(&client_stream, verbosity) {
-                        Ok(_) => {
-                            if verbosity > 0 {
-                                println!("Connection {:?} successful", &client_stream);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Connection {:?} error: {}", &client_stream, e);
-                        }
-                    };
+                    handle_connection(&client_stream, verbosity_level).unwrap_or_else(|e| {
+                        eprintln!("Connection {:?} error: {}", &client_stream, e)
+                    });
                 });
             }
             Err(e) => {
@@ -50,11 +50,14 @@ fn main() {
     }
 }
 
-fn handle_connection(client_stream: &TcpStream, verbosity: usize) -> Result<()> {
+fn handle_connection(client_stream: &TcpStream, verbosity_level: usize) -> Result<()> {
     connection_handshake(client_stream)?;
     authentication_negotiation(client_stream)?;
-    let remote_ip = parse_request(client_stream, verbosity)?;
-    remote_request(&remote_ip, &client_stream, verbosity)
+    if verbosity_level > 0 {
+        println!("Connection {:?} successful", &client_stream);
+    }
+    let remote_ip = parse_request(client_stream, verbosity_level)?;
+    remote_request(&remote_ip, &client_stream, verbosity_level)
 }
 
 fn connection_handshake(client_stream: &TcpStream) -> Result<()> {
@@ -86,7 +89,7 @@ fn authentication_negotiation(mut client_stream: &TcpStream) -> Result<()> {
     Err(error("No acceptable authentication method sent"))
 }
 
-fn parse_request(mut client_stream: &TcpStream, verbosity: usize) -> Result<SocketAddr> {
+fn parse_request(mut client_stream: &TcpStream, verbosity_level: usize) -> Result<SocketAddr> {
     enum AddressType {
         IPv4,
         IPv6,
@@ -152,7 +155,7 @@ fn parse_request(mut client_stream: &TcpStream, verbosity: usize) -> Result<Sock
             )
         }
     };
-    if verbosity > 0 {
+    if verbosity_level > 0 {
         println!("Connection {:?} requests {}", &client_stream, request_ip);
     }
     Ok(request_ip)
@@ -161,7 +164,7 @@ fn parse_request(mut client_stream: &TcpStream, verbosity: usize) -> Result<Sock
 fn remote_request(
     request_ip: &SocketAddr,
     mut client_stream: &TcpStream,
-    verbosity: usize,
+    verbosity_level: usize,
 ) -> Result<()> {
     let remote = TcpStream::connect(request_ip);
     match remote {
@@ -190,7 +193,7 @@ fn remote_request(
                     "Recv",
                     &mut remote_stream_clone,
                     &mut client_stream_clone,
-                    verbosity,
+                    verbosity_level,
                 )
             });
 
@@ -198,7 +201,7 @@ fn remote_request(
                 "Send",
                 &mut client_stream.try_clone()?,
                 &mut remote_stream,
-                verbosity,
+                verbosity_level,
             )?;
 
             receiver
@@ -213,18 +216,23 @@ fn remote_request(
     Ok(())
 }
 
-fn pipe_data(name: &str, from: &mut TcpStream, to: &mut TcpStream, verbosity: usize) -> Result<()> {
+fn pipe_data(
+    name: &str,
+    from: &mut TcpStream,
+    to: &mut TcpStream,
+    verbosity_level: usize,
+) -> Result<()> {
     let mut buffer = [0u8; 16384];
     loop {
         match from.read(&mut buffer) {
             Ok(read) => {
                 if read > 0 {
-                    if verbosity > 2 {
+                    if verbosity_level > 2 {
                         println!("{}: {}", name, &read);
                     }
                     to.write(&buffer[0..read])?;
                 } else {
-                    if verbosity > 1 {
+                    if verbosity_level > 1 {
                         println!("{}: EOF", name);
                     }
                     let _ = to.shutdown(Shutdown::Both);
