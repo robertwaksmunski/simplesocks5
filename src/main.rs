@@ -9,16 +9,14 @@ fn main() {
     // Parse agruments
     let verbosity_level = env::args()
         .into_iter()
-        .filter(|s| s.starts_with("-v"))
-        .next()
-        .unwrap_or(String::from("-"))
+        .find(|s| s.starts_with("-v"))
+        .unwrap_or_else(|| String::from("-"))
         .len()
         - 1;
 
     let bind = match env::args()
         .into_iter()
-        .filter(|s| SocketAddr::from_str(s).is_ok())
-        .next()
+        .find(|s| SocketAddr::from_str(s).is_ok())
     {
         Some(s) => SocketAddr::from_str(&s),
         None => SocketAddr::from_str("0.0.0.0:1080"),
@@ -57,14 +55,14 @@ fn handle_connection(client_stream: &TcpStream, verbosity_level: usize) -> Resul
         println!("Connection {:?} successful", &client_stream);
     }
     let remote_ip = parse_request(client_stream, verbosity_level)?;
-    remote_request(&remote_ip, &client_stream, verbosity_level)
+    remote_request(&remote_ip, client_stream, verbosity_level)
 }
 
 fn connection_handshake(client_stream: &TcpStream) -> Result<()> {
     let byte = client_stream
         .bytes()
         .next()
-        .ok_or(error("Connection handshake read failed"))??;
+        .ok_or_else(|| error("Connection handshake read failed"))??;
     match byte {
         5 => Ok(()),
         _ => Err(error("Invalid protocol version")),
@@ -75,17 +73,17 @@ fn authentication_negotiation(mut client_stream: &TcpStream) -> Result<()> {
     let authentication_methods_count = client_stream
         .bytes()
         .next()
-        .ok_or(error("Authentication method count read failed"))??;
+        .ok_or_else(|| error("Authentication method count read failed"))??;
     let mut authentication_methods = vec![0; authentication_methods_count.into()];
     client_stream.read_exact(&mut authentication_methods)?;
 
     // Allow unauthenticated user
     if authentication_methods.contains(&0) {
-        client_stream.write(&[5u8, 0u8])?;
+        client_stream.write_all(&[5u8, 0u8])?;
         return Ok(());
     }
 
-    client_stream.write(&[5u8, 255u8])?;
+    client_stream.write_all(&[5u8, 255u8])?;
     Err(error("No acceptable authentication method sent"))
 }
 
@@ -104,12 +102,12 @@ fn parse_request(mut client_stream: &TcpStream, verbosity_level: usize) -> Resul
     }
     // Command: 1 connect, 3 udp
     if request[1] != 1 {
-        client_stream.write(&[5u8, 7u8])?;
+        client_stream.write_all(&[5u8, 7u8])?;
         return Err(error("Request, Invalid command"));
     }
     // Reserved: always 0
     if request[2] != 0 {
-        client_stream.write(&[5u8, 1u8])?;
+        client_stream.write_all(&[5u8, 1u8])?;
         return Err(error("Request, Invalid reserved"));
     }
     // Address type: 1 IPv4, 4 IPv6
@@ -119,7 +117,7 @@ fn parse_request(mut client_stream: &TcpStream, verbosity_level: usize) -> Resul
     } else if request[3] == 1 {
         address_type = AddressType::IPv4;
     } else {
-        client_stream.write(&[5u8, 8u8])?;
+        client_stream.write_all(&[5u8, 8u8])?;
         return Err(error("Request, address type not supported"));
     }
 
@@ -171,19 +169,19 @@ fn remote_request(
         Ok(mut remote_stream) => {
             let _ = remote_stream.set_nodelay(true);
 
-            client_stream.write(&[5u8, 0u8, 0u8])?;
+            client_stream.write_all(&[5u8, 0u8, 0u8])?;
             let local_addr = remote_stream.local_addr()?;
             match local_addr.ip() {
                 IpAddr::V4(ip) => {
-                    client_stream.write(&[1u8])?;
-                    client_stream.write(&ip.octets())?;
+                    client_stream.write_all(&[1u8])?;
+                    client_stream.write_all(&ip.octets())?;
                 }
                 IpAddr::V6(ip) => {
-                    client_stream.write(&[4u8])?;
-                    client_stream.write(&ip.octets())?;
+                    client_stream.write_all(&[4u8])?;
+                    client_stream.write_all(&ip.octets())?;
                 }
             }
-            client_stream.write(&local_addr.port().to_le_bytes())?;
+            client_stream.write_all(&local_addr.port().to_le_bytes())?;
 
             let mut client_stream_clone = client_stream.try_clone()?;
             let mut remote_stream_clone = remote_stream.try_clone()?;
@@ -209,7 +207,7 @@ fn remote_request(
                 .expect("The request receiver thread has panicked")?;
         }
         Err(_) => {
-            client_stream.write(&[5u8, 5u8])?;
+            client_stream.write_all(&[5u8, 5u8])?;
             return Err(error("Request, connection failed"));
         }
     }
@@ -230,7 +228,7 @@ fn pipe_data(
                     if verbosity_level > 2 {
                         println!("{}: {}", name, &read);
                     }
-                    to.write(&buffer[0..read])?;
+                    to.write_all(&buffer[0..read])?;
                 } else {
                     if verbosity_level > 1 {
                         println!("{}: EOF", name);
